@@ -1,11 +1,13 @@
 const { app, BrowserWindow, ipcMain, dialog } = require('electron');
 const path = require('node:path');
 const fs = require('node:fs/promises');
-const { execFile } = require('node:child_process');
+const { collectRuntime } = require('./runtime.cjs');
 const root = path.join(__dirname, '..');
-ipcMain.handle('diagnose', () => new Promise(resolve => {
-  execFile('nvidia-smi', ['--query-gpu=name,memory.total,memory.free', '--format=csv,noheader'], { windowsHide: true, timeout: 10000 }, (error, stdout) => resolve({ gpu: error ? 'ตรวจ GPU ไม่สำเร็จ' : stdout.trim(), ready: false, message: 'ยังไม่ได้ยืนยันชุดโมเดลและระบบสร้างพื้นผิวบนเครื่องนี้' }));
-}));
+let pendingDiagnosis;
+ipcMain.handle('diagnose', () => {
+  pendingDiagnosis ||= collectRuntime(root).finally(() => { pendingDiagnosis = null; });
+  return pendingDiagnosis;
+});
 ipcMain.handle('save', async (_event, name, bytes) => {
   const ext = path.extname(String(name)).toLowerCase();
   if (!['.glb', '.obj', '.stl'].includes(ext)) throw new Error('Unsupported format');
@@ -15,7 +17,9 @@ ipcMain.handle('save', async (_event, name, bytes) => {
   await fs.writeFile(result.filePath, bytes); return true;
 });
 app.whenReady().then(() => {
-  const win = new BrowserWindow({ width: 1420, height: 920, minWidth: 1000, minHeight: 700, backgroundColor: '#101214', title: 'Hunyuan Studio', webPreferences: { preload: path.join(__dirname, 'preload.cjs'), contextIsolation: true, nodeIntegration: false, sandbox: true } });
+  const win = new BrowserWindow({ width: 1420, height: 1000, minWidth: 900, minHeight: 700, backgroundColor: '#111318', title: 'Hunyuan Studio', webPreferences: { preload: path.join(__dirname, 'preload.cjs'), contextIsolation: true, nodeIntegration: false, sandbox: true } });
+  win.webContents.on('will-attach-webview', event => event.preventDefault());
+  win.webContents.session.setPermissionRequestHandler((_contents, _permission, callback) => callback(false));
   win.setMenuBarVisibility(false);
   win.webContents.setWindowOpenHandler(() => ({ action: 'deny' }));
   win.webContents.on('will-navigate', event => event.preventDefault());
