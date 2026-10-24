@@ -69,6 +69,34 @@ test('download errors are reported and truncated JSON is not success', async t =
   assert.equal(data.environmentReady, false);
 });
 
+test('generation is available only when python and both weight sets exist', async t => {
+  const root = await fixture(t);
+  await write(root, '.venv-ai/Scripts/python.exe', 'stub');
+  await write(root, 'models/tencent/Hunyuan3D-2mini/hunyuan3d-dit-v2-mini/config.yaml', 'model: test');
+  await write(root, 'models/tencent/Hunyuan3D-2mini/hunyuan3d-dit-v2-mini/model.fp16.safetensors', 'weights');
+  const run = async () => ({ stdout: JSON.stringify({ ok: true, gpu: 'fixture', ram_free_gib: 1, vram_free_mib: 100 }) });
+  let data = await collectRuntime(root, run);
+  assert.equal(data.generationAvailable, false);
+  for (const file of [
+    'models/stabilityai/sd-turbo/model_index.json',
+    'models/stabilityai/sd-turbo/unet/config.json',
+    'models/stabilityai/sd-turbo/unet/diffusion_pytorch_model.fp16.safetensors',
+    'models/stabilityai/sd-turbo/vae/config.json',
+    'models/stabilityai/sd-turbo/vae/diffusion_pytorch_model.fp16.safetensors',
+    'models/stabilityai/sd-turbo/text_encoder/config.json',
+    'models/stabilityai/sd-turbo/text_encoder/model.fp16.safetensors',
+    'models/stabilityai/sd-turbo/scheduler/scheduler_config.json',
+    'models/stabilityai/sd-turbo/tokenizer/tokenizer_config.json',
+    'models/stabilityai/sd-turbo/tokenizer/vocab.json',
+    'models/stabilityai/sd-turbo/tokenizer/merges.txt',
+  ]) await write(root, file, 'weight');
+  data = await collectRuntime(root, run);
+  assert.equal(data.generationAvailable, true);
+  assert.equal(data.inferenceVerified, false);
+  assert.equal(data.ready, false);
+  assert.match(data.message, /ยังไม่ยืนยัน/);
+});
+
 test('failed live hardware diagnosis does not show old free memory as current', async t => {
   const root = await fixture(t);
   await write(root, '.venv-ai/Scripts/python.exe', 'test fixture');

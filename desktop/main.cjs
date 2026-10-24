@@ -2,12 +2,18 @@ const { app, BrowserWindow, ipcMain, dialog } = require('electron');
 const path = require('node:path');
 const fs = require('node:fs/promises');
 const { collectRuntime } = require('./runtime.cjs');
+const { createGeneration } = require('./generate.cjs');
 const root = path.join(__dirname, '..');
+const generation = createGeneration({ root });
 let pendingDiagnosis;
 ipcMain.handle('diagnose', () => {
   pendingDiagnosis ||= collectRuntime(root).finally(() => { pendingDiagnosis = null; });
   return pendingDiagnosis;
 });
+ipcMain.handle('generate', (event, request) => generation.start(request, payload => {
+  if (!event.sender.isDestroyed()) event.sender.send('generate-progress', payload);
+}));
+ipcMain.handle('cancel-generate', () => generation.cancel());
 ipcMain.handle('save', async (_event, name, bytes) => {
   const ext = path.extname(String(name)).toLowerCase();
   if (!['.glb', '.obj', '.stl'].includes(ext)) throw new Error('Unsupported format');
@@ -23,6 +29,7 @@ app.whenReady().then(() => {
   win.setMenuBarVisibility(false);
   win.webContents.setWindowOpenHandler(() => ({ action: 'deny' }));
   win.webContents.on('will-navigate', event => event.preventDefault());
+  win.on('closed', () => generation.cancel());
   win.loadFile(path.join(root, 'dist/index.html'));
 });
 app.on('window-all-closed', () => app.quit());

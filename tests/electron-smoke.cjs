@@ -31,7 +31,9 @@ async function main() {
   assert.equal(await js('document.querySelector("#generate").disabled'), true);
   assert.equal(await js('document.querySelector("#viewer-unavailable").hidden'), true);
   const live = await js('window.studio.diagnose()');
-  assert.equal(live.generationAvailable, false);
+  assert.equal(live.generationAvailable, live.models.every(model => model.complete));
+  assert.equal(live.inferenceVerified, false);
+  assert.equal(live.ready, false);
   assert.ok(live.models.length === 2);
   await js('document.querySelector("[data-example=fox]").click()');
   assert.match(await js('document.querySelector("#prompt").value'), /orange ceramic fox/);

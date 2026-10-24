@@ -66,13 +66,14 @@ document.querySelector('#app').innerHTML = `
             </label>
             <div class="image-preview" id="image-preview" hidden><img id="input-preview" alt="ภาพตั้งต้นที่เลือก"><div><strong id="image-name"></strong><span id="image-size"></span></div><button class="icon-button" id="remove-image" aria-label="ลบภาพที่เลือก">${icon('close', 16)}</button></div>
             <p class="input-note">${icon('info', 14)} ใช้ภาพวัตถุเดี่ยว มุมมองชัดเจน · ยังไม่มีระบบลบพื้นหลังอัตโนมัติ</p>
+            <label class="option-line"><input type="checkbox" id="white-background"> <span>ตัดพื้นขาวเฉพาะภาพทดสอบ · อาจลบส่วนสีขาวของวัตถุ</span></label>
           </div>
           <div class="divider"></div>
           <div class="section-label">${icon('settings', 16)} การตั้งค่าสำหรับทดสอบ <span class="tag">SHAPE ONLY</span></div>
           <div class="model-choice"><span class="model-icon">${icon('cube', 22)}</span><div><strong>Hunyuan3D-2mini</strong><span>โมเดลรูปทรง · FP16 · บนเครื่อง</span></div><span class="model-dot"></span></div>
           <div class="settings-grid"><div><span>Inference steps</span><strong>8 <small>steps</small></strong></div><div><span>Mesh resolution</span><strong>128 <small>coarse</small></strong></div></div>
           <div class="pipeline"><span id="pipeline-start">ข้อความ</span>${icon('chevron', 12)}<span id="pipeline-middle">SD-Turbo</span>${icon('chevron', 12)}<span>2mini</span>${icon('chevron', 12)}<strong>3D</strong></div>
-          <div class="generate-area"><button class="button generate" id="generate" disabled>${icon('sparkle', 20)} สร้างโมเดล 3D <span>${icon('arrow', 19)}</span></button><p id="generation-note">ยังไม่เปิดใช้งาน — รอทดสอบ AI และเชื่อมระบบสร้างจริง</p></div>
+          <div class="generate-area"><button class="button generate" id="generate" disabled>${icon('sparkle', 20)} <span id="generate-label">สร้างโมเดล 3D</span> <span id="generate-arrow">${icon('arrow', 19)}</span></button><button class="button subtle" id="cancel-generate" type="button" hidden>ยกเลิก</button><p id="generation-note">กำลังตรวจว่าเชื่อมระบบสร้างได้หรือไม่</p><img id="generated-preview" class="generated-preview" alt="ภาพที่สร้างก่อนแปลงเป็น 3D" hidden></div>
           <div class="privacy-note">${icon('check', 13)} การเลือกไฟล์ในหน้านี้ไม่อัปโหลดข้อมูลออกจากเครื่อง</div>
         </section>
         <section class="viewer-panel panel" aria-labelledby="viewer-title">
@@ -126,6 +127,7 @@ function switchMode(mode, focus = false) {
   $('#pipeline-start').textContent = mode === 'text' ? 'ข้อความ' : 'รูปภาพ';
   $('#pipeline-middle').textContent = mode === 'text' ? 'SD-Turbo' : 'ภาพตั้งต้น';
   if (focus) $(`#${mode}-tab`).focus();
+  updateGenerateButton();
 }
 for (const mode of ['text', 'image']) {
   $(`#${mode}-tab`).addEventListener('click', () => switchMode(mode));
@@ -140,7 +142,7 @@ const examples = {
   fox: 'A small orange ceramic fox figurine, full object, sitting pose, isolated on a plain white background, soft studio lighting, no text',
   vase: 'A simple teal ceramic vase, full object, rounded body and narrow neck, isolated on a plain white background, soft studio lighting, no text',
 };
-$('#prompt').addEventListener('input', () => { $('#char-count').textContent = `${$('#prompt').value.length.toLocaleString('en-US')} / 1,000`; });
+$('#prompt').addEventListener('input', () => { $('#char-count').textContent = `${$('#prompt').value.length.toLocaleString('en-US')} / 1,000`; updateGenerateButton(); });
 for (const button of document.querySelectorAll('[data-example]')) button.addEventListener('click', () => {
   $('#prompt').value = examples[button.dataset.example];
   $('#prompt').dispatchEvent(new Event('input'));
@@ -169,6 +171,7 @@ async function selectImage(file) {
     $('#image-preview').hidden = false;
     $('#image-drop').classList.add('has-image');
     toast('เลือกรูปแล้ว · เก็บอยู่ในหน้านี้ ยังไม่ได้ประมวลผล AI');
+    updateGenerateButton();
   } catch (error) {
     if (url) URL.revokeObjectURL(url);
     toast(error.message || 'เปิดรูปไม่สำเร็จ', true);
@@ -186,6 +189,7 @@ $('#remove-image').addEventListener('click', () => {
   $('#input-preview').removeAttribute('src');
   $('#image-preview').hidden = true;
   $('#image-drop').classList.remove('has-image');
+  updateGenerateButton();
 });
 
 function modelUpdated(stats, name, source) {
@@ -194,9 +198,12 @@ function modelUpdated(stats, name, source) {
   $('#vertex-count').textContent = stats.vertices.toLocaleString('en-US');
   $('#triangle-count').textContent = stats.triangles.toLocaleString('en-US');
   $('#source-badge').classList.toggle('imported', source === 'imported');
-  $('#source-badge').innerHTML = `<i></i> ${source === 'sample' ? 'ตัวอย่างหน้าจอ · ไม่ใช่ผล AI' : 'ไฟล์ที่นำเข้า · ไม่ยืนยันแหล่งสร้าง'}`;
-  $('#model-description').textContent = source === 'sample' ? 'โมเดลตัวอย่างที่ประกอบด้วยเรขาคณิตสำหรับทดลองหน้าจอ' : 'นำเข้าจากเครื่องของคุณ · ไม่ได้สร้างโดยแอปนี้';
-  $('#export-hint').textContent = source === 'sample' ? 'ไฟล์ส่งออกจะมีชื่อ sample ไม่ใช่ผล AI' : 'ส่งออกสำเนาโมเดลที่แสดงในพื้นที่ดู';
+  $('#source-badge').classList.toggle('generated', source === 'generated');
+  const badge = source === 'sample' ? 'ตัวอย่างหน้าจอ · ไม่ใช่ผล AI' : source === 'generated' ? 'ผล Hunyuan บนเครื่องนี้ · รูปทรงหยาบ' : 'ไฟล์ที่นำเข้า · ไม่ยืนยันแหล่งสร้าง';
+  $('#source-badge').innerHTML = `<i></i> ${badge}`;
+  $('#model-description').textContent = source === 'sample' ? 'โมเดลตัวอย่างที่ประกอบด้วยเรขาคณิตสำหรับทดลองหน้าจอ' : source === 'generated' ? 'สร้างโดย Hunyuan3D-2mini บนเครื่องนี้ · ไม่มีเท็กซ์เจอร์' : 'นำเข้าจากเครื่องของคุณ · ไม่ได้สร้างโดยแอปนี้';
+  $('#export-hint').textContent = source === 'sample' ? 'ไฟล์ส่งออกจะมีชื่อ sample ไม่ใช่ผล AI' : source === 'generated' ? 'ส่งออกผลรูปทรงที่สร้างบนเครื่องนี้' : 'ส่งออกสำเนาโมเดลที่แสดงในพื้นที่ดู';
+  if ($('#clay-mode').getAttribute('aria-pressed') !== 'true') $('#material-label').textContent = source === 'sample' ? 'Sample colors' : source === 'generated' ? 'Shape only' : 'Original';
 }
 try {
   state.viewer = createViewer($('#canvas-container'), message => toast(message, true));
@@ -232,9 +239,68 @@ for (const [id, method] of [['wireframe', 'setWireframe'], ['auto-rotate', 'setR
     $(`#${id}`).setAttribute('aria-pressed', String(selected));
     $(`#${id}`).classList.toggle('selected', selected);
     state.viewer?.[method](selected);
-    if (id === 'clay-mode') $('#material-label').textContent = selected ? 'Neutral clay' : state.source === 'sample' ? 'Sample colors' : 'Original';
+    if (id === 'clay-mode') $('#material-label').textContent = selected ? 'Neutral clay' : state.source === 'sample' ? 'Sample colors' : state.source === 'generated' ? 'Shape only' : 'Original';
   });
 }
+let previewUrl;
+function showPreview(bytes) {
+  if (previewUrl) URL.revokeObjectURL(previewUrl);
+  previewUrl = null;
+  const image = $('#generated-preview');
+  if (!bytes) { image.hidden = true; image.removeAttribute('src'); return; }
+  previewUrl = URL.createObjectURL(new Blob([bytes], { type: 'image/png' }));
+  image.src = previewUrl;
+  image.hidden = false;
+}
+function updateGenerateButton() {
+  const available = Boolean(desktop && state.status?.generationAvailable && state.viewer);
+  const hasInput = state.mode === 'text' ? $('#prompt').value.trim().length > 0 : Boolean(state.imageFile);
+  $('#generate').disabled = state.busy || !(available && hasInput);
+  $('#cancel-generate').hidden = !state.busy;
+  if (state.busy) return;
+  if (!desktop) $('#generation-note').textContent = 'เปิดแอปเดสก์ท็อปเพื่อสร้างบนเครื่องนี้';
+  else if (!state.status) $('#generation-note').textContent = 'กำลังตรวจว่าเชื่อมระบบสร้างได้หรือไม่';
+  else if (!available) $('#generation-note').textContent = 'ยังสร้างไม่ได้ — Python หรือน้ำหนักโมเดลไม่ครบ';
+  else if (!hasInput) $('#generation-note').textContent = state.mode === 'text' ? 'พิมพ์ข้อความก่อนสร้าง · ภาษาอังกฤษแนะนำ' : 'เลือกรูปก่อนสร้าง';
+  else if (state.mode === 'text') $('#generation-note').textContent = 'กดสร้างเพื่อรันบนเครื่องนี้ · ข้อความถูกสร้างเป็นภาพแล้วตัดพื้นขาวแบบทดสอบ · ถ้าหน่วยความจำไม่พอ ระบบจะไม่โหลดโมเดล';
+  else $('#generation-note').textContent = 'กดสร้างเพื่อรันบนเครื่องนี้ · รูปต้องมีพื้นโปร่งใส หรือติ๊กตัดพื้นขาว · ถ้าหน่วยความจำไม่พอ ระบบจะไม่โหลดโมเดล';
+}
+function setLocked(locked) {
+  state.busy = locked;
+  for (const id of ['import-model', 'export-model', 'load-sample', 'text-tab', 'image-tab', 'rail-import']) $(`#${id}`).disabled = locked || !state.viewer;
+  $('#prompt').disabled = locked;
+  $('#white-background').disabled = locked;
+  updateGenerateButton();
+}
+async function runGeneration() {
+  if (!window.studio?.generate || state.busy || !state.viewer) return;
+  setLocked(true);
+  showPreview(null);
+  try {
+    const request = state.mode === 'text'
+      ? { mode: 'text', prompt: $('#prompt').value.trim() }
+      : { mode: 'image', imageName: state.imageFile.name, imageBytes: new Uint8Array(await state.imageFile.arrayBuffer()), whiteBackground: $('#white-background').checked };
+    const result = await window.studio.generate(request);
+    const glb = result.glb instanceof ArrayBuffer ? result.glb : result.glb.buffer.slice(result.glb.byteOffset, result.glb.byteOffset + result.glb.byteLength);
+    const stats = await state.viewer.load(glb, 'glb');
+    modelUpdated(stats, result.name || 'hunyuan-shape.glb', 'generated');
+    if (result.preview) showPreview(result.preview);
+    const where = typeof result.jobId === 'string' && /^[a-z0-9-]{4,40}$/.test(result.jobId) ? ` · outputs/jobs/${result.jobId}` : '';
+    $('#generation-note').textContent = `สร้างรูปทรงหยาบแล้ว · ไม่มีเท็กซ์เจอร์${where}`;
+    toast('สร้างรูปทรงแล้ว · ยังไม่ใช่การยืนยันคุณภาพ');
+  } catch (error) {
+    const message = error?.message || 'สร้างไม่สำเร็จ';
+    $('#generation-note').textContent = message;
+    toast(message, !/ยกเลิก/.test(message));
+  } finally {
+    setLocked(false);
+  }
+}
+$('#generate').addEventListener('click', () => runGeneration());
+$('#cancel-generate').addEventListener('click', () => { window.studio?.cancelGenerate(); $('#generation-note').textContent = 'กำลังยกเลิก'; });
+const stopProgress = window.studio?.onGenerateProgress?.(payload => {
+  if (state.busy && payload && typeof payload.message === 'string') $('#generation-note').textContent = payload.message;
+});
 $('#export-model').addEventListener('click', async () => {
   if (!state.viewer || state.busy) return;
   const format = $('#export-format').value;
@@ -264,7 +330,11 @@ function statusRow(label, value, kind = '') {
 function renderSystem() {
   const content = $('#system-content'); content.replaceChildren();
   const notice = document.createElement('p'); notice.className = 'system-notice';
-  notice.textContent = 'ส่วนสร้าง AI ยังไม่เชื่อมต่อหน้าจอ แม้ดาวน์โหลดครบ ปุ่มสร้างจะยังไม่เปิดจนกว่าทดสอบ inference จริงผ่านและเชื่อม backend แล้ว';
+  notice.textContent = !desktop
+    ? 'โหมดเบราว์เซอร์ดูหน้าจอได้อย่างเดียว เปิดด้วย npm start เพื่อสร้างบนเครื่อง'
+    : state.status?.generationAvailable
+      ? 'ปุ่มสร้างเชื่อมกับสคริปต์บนเครื่องแล้ว การกดสร้างจะรันโมเดลจริง ยังไม่ยืนยันว่า inference ผ่านบนเครื่องนี้ ถ้าหน่วยความจำไม่พอ ระบบจะไม่โหลดโมเดล'
+      : 'ปุ่มสร้างยังใช้ไม่ได้ เพราะ Python หรือน้ำหนักโมเดลยังไม่ครบ';
   content.append(notice);
   if (!desktop) {
     content.append(statusRow('โหมดปัจจุบัน', 'Browser preview'), statusRow('GPU / RAM / ดาวน์โหลด', 'อ่านไม่ได้ในเบราว์เซอร์', 'warning'), statusRow('ใช้งานได้แล้ว', 'ข้อความ · รูปภาพ · ดู/นำเข้า/ส่งออก 3D'));
@@ -278,7 +348,8 @@ function renderSystem() {
   content.append(statusRow('Python / CUDA', data.environmentReady ? 'ติดตั้งและตรวจนำเข้าโมดูลผ่านแล้ว' : 'ยังไม่ยืนยัน', data.environmentReady ? 'success' : 'warning'));
   for (const model of data.models || []) content.append(statusRow(model.name, model.complete ? 'ไฟล์ครบตามรายการ' : `${model.downloadedMiB.toLocaleString('en-US')} MiB บนดิสก์ · ยังไม่ครบ`, model.complete ? 'success' : 'warning'));
   content.append(statusRow('การดาวน์โหลด', data.downloadState));
-  content.append(statusRow('AI inference', data.inferenceVerified ? 'มีรายงาน CLI ผ่าน · ยังไม่เชื่อม UI' : 'ยังไม่ผ่านการทดสอบจริง', 'warning'));
+  content.append(statusRow('การสร้างจากหน้าจอ', data.generationAvailable ? 'เชื่อมกับสคริปต์แล้ว · กดปุ่มจะรันจริง' : 'ยังใช้ไม่ได้', data.generationAvailable ? 'success' : 'warning'));
+  content.append(statusRow('AI inference', data.inferenceVerified ? 'มีรายงานผ่าน' : 'ยังไม่ผ่านการทดสอบจริง', data.inferenceVerified ? 'success' : 'warning'));
   if (data.error) content.append(statusRow('ข้อผิดพลาด', data.error, 'warning'));
   $('#status-time').textContent = `ตรวจเมื่อ ${new Date(data.checkedAt).toLocaleTimeString('th-TH')}`;
 }
@@ -290,10 +361,10 @@ async function refreshStatus() {
     const data = await window.studio.diagnose(); state.status = data;
     $('#runtime-title').textContent = data.gpu || 'Local runtime';
     $('#runtime-detail').textContent = `${data.downloadState} · ${data.environmentReady ? 'Python / CUDA ตรวจผ่าน' : 'ยังไม่ยืนยัน Python / CUDA'}`;
-    $('#runtime-status').textContent = 'ยังไม่เชื่อม AI กับหน้าจอ';
+    $('#runtime-status').textContent = data.generationAvailable ? 'ปุ่มสร้างเชื่อมแล้ว · ยังไม่ทดสอบ inference' : 'ยังสร้างไม่ได้';
     renderSystem();
   } catch (error) { $('#runtime-detail').textContent = `ตรวจสถานะไม่สำเร็จ: ${error.message}`; toast('ตรวจระบบไม่สำเร็จ ลองอีกครั้ง', true); }
-  finally { checking = false; $('#refresh-system').disabled = false; }
+  finally { checking = false; $('#refresh-system').disabled = false; if (!state.busy) updateGenerateButton(); }
 }
 for (const id of ['open-system', 'rail-system', 'runtime-more']) $(`#${id}`).addEventListener('click', () => { renderSystem(); $('#system-dialog').showModal(); refreshStatus(); });
 $('#close-system').addEventListener('click', () => $('#system-dialog').close());
@@ -303,8 +374,9 @@ $('#studio-nav').addEventListener('click', () => { $('#input-title').scrollIntoV
 renderSystem();
 if (desktop) refreshStatus();
 const statusInterval = desktop ? setInterval(() => { if (!document.hidden) refreshStatus(); }, 30_000) : null;
-window.addEventListener('pagehide', () => { if (state.imageUrl) URL.revokeObjectURL(state.imageUrl); if (statusInterval) clearInterval(statusInterval); state.viewer?.dispose(); }, { once: true });
+window.addEventListener('pagehide', () => { if (state.imageUrl) URL.revokeObjectURL(state.imageUrl); if (previewUrl) URL.revokeObjectURL(previewUrl); if (statusInterval) clearInterval(statusInterval); stopProgress?.(); state.viewer?.dispose(); window.studio?.cancelGenerate?.(); }, { once: true });
 // Prevent Chromium/Electron from navigating away when a file is dropped outside a drop zone.
 window.addEventListener('dragover', event => event.preventDefault());
 window.addEventListener('drop', event => event.preventDefault());
-if (import.meta.hot) import.meta.hot.dispose(() => { clearInterval(statusInterval); clearTimeout(toastTimer); state.viewer?.dispose(); if (state.imageUrl) URL.revokeObjectURL(state.imageUrl); });
+if (import.meta.hot) import.meta.hot.dispose(() => { clearInterval(statusInterval); clearTimeout(toastTimer); stopProgress?.(); state.viewer?.dispose(); if (state.imageUrl) URL.revokeObjectURL(state.imageUrl); if (previewUrl) URL.revokeObjectURL(previewUrl); });
+updateGenerateButton();

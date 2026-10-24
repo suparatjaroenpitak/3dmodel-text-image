@@ -42,7 +42,8 @@ async function collectRuntime(root, run = exec) {
   let hardware = await readJson(path.join(setup, 'hardware.json'));
   let diagnosticError = null;
   const python = path.join(root, '.venv-ai', 'Scripts', 'python.exe');
-  if (await exists(python)) {
+  const pythonReady = await exists(python);
+  if (pythonReady) {
     try {
       const { stdout } = await run(python, [path.join(root, 'scripts', 'ai_smoke.py'), 'diagnose'], { windowsHide: true, timeout: 15000, maxBuffer: 256 * 1024, cwd: root, encoding: 'utf8' });
       const current = JSON.parse(stdout);
@@ -75,8 +76,11 @@ async function collectRuntime(root, run = exec) {
     environmentCheckedAt: diagnosis?.ok ? diagnosis.checkedAt || null : null,
     models, downloadState,
     inferenceVerified: reports.every(report => report?.ok === true) && reports[0]?.validation?.faces > 0 && reports[2]?.validation?.faces > 0,
-    ready: false, generationAvailable: false,
-    message: 'หน้าจอยังไม่ได้เชื่อมระบบสร้าง AI จริง',
+    ready: false,
+    generationAvailable: pythonReady && models.every(model => model.complete),
+    message: pythonReady && models.every(model => model.complete)
+      ? 'ปุ่มสร้างเชื่อมกับสคริปต์บนเครื่องแล้ว แต่ยังไม่ยืนยันว่า inference ผ่านบนเครื่องนี้'
+      : 'ยังสร้างไม่ได้ เพราะ Python หรือน้ำหนักโมเดลไม่ครบ',
     error: diagnosticError || (exit !== null && exit !== '0' ? downloadReport?.error || 'ตรวจ outputs/setup/download.log' : null),
   };
 }
